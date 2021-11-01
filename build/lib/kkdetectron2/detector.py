@@ -68,12 +68,17 @@ def set_config(
     return cfg
 
 
-def register_catalogs(dataset_name: str, coco_json_path: str=None, image_path: str=None, classes: List[str]=None, keypoint_names: List[str]=None, keypoint_flip_map: List[Tuple[str]]=None):
+def register_catalogs(
+    dataset_name: str, coco_json_path: str=None, image_path: str=None, 
+    classes: List[str]=None, keypoint_names: List[str]=None, keypoint_flip_map: List[Tuple[str]]=None,
+    remove_dataset: bool=False
+):
     assert isinstance(dataset_name, str)
-    try: DatasetCatalog.remove(dataset_name) # Cannot re-register without deleting the key
-    except KeyError: pass
-    try: MetadataCatalog.remove(dataset_name) # Cannot re-register without deleting the key
-    except KeyError: pass
+    if remove_dataset:
+        try: DatasetCatalog.remove(dataset_name) # Cannot re-register without deleting the key
+        except KeyError: pass
+        try: MetadataCatalog.remove(dataset_name) # Cannot re-register without deleting the key
+        except KeyError: pass
     if coco_json_path is not None and image_path is not None:
         assert isinstance(coco_json_path, str)
         assert isinstance(image_path, str)
@@ -84,19 +89,21 @@ def register_catalogs(dataset_name: str, coco_json_path: str=None, image_path: s
             keypoint_names = coco.df_json["categories_keypoints"].iloc[0]
             if len(keypoint_names) == 0: keypoint_names = None
         register_coco_instances(dataset_name, {}, coco_json_path, image_path)
-    assert isinstance(classes, list) and check_type_list(classes, str)
-    MetadataCatalog.get(dataset_name).thing_classes = classes
-    if keypoint_names is not None:
-        assert isinstance(keypoint_names, list) and check_type_list(keypoint_names, str)
-        if keypoint_flip_map is not None:
-            assert isinstance(keypoint_flip_map, list) and check_type_list(keypoint_flip_map, [list, tuple], str)
-            assert len(keypoint_names) == len(keypoint_flip_map)
-            assert sum([len(x) == 2 for x in keypoint_flip_map]) == len(keypoint_names)
-        else:
-            keypoint_flip_map = []
-        MetadataCatalog.get(dataset_name).keypoint_names            = keypoint_names
-        MetadataCatalog.get(dataset_name).keypoint_flip_map         = keypoint_flip_map
-        MetadataCatalog.get(dataset_name).keypoint_connection_rules = [(x[0], x[1], (255,0,0)) for x in keypoint_flip_map] # Visualizer の内部で使用している
+    if dataset_name == DEFAULT_DATASET_NAME: assert classes is not None
+    if classes is not None:
+        assert isinstance(classes, list) and check_type_list(classes, str)
+        MetadataCatalog.get(dataset_name).thing_classes = classes
+        if keypoint_names is not None:
+            assert isinstance(keypoint_names, list) and check_type_list(keypoint_names, str)
+            if keypoint_flip_map is not None:
+                assert isinstance(keypoint_flip_map, list) and check_type_list(keypoint_flip_map, [list, tuple], str)
+                assert len(keypoint_names) == len(keypoint_flip_map)
+                assert sum([len(x) == 2 for x in keypoint_flip_map]) == len(keypoint_names)
+            else:
+                keypoint_flip_map = []
+            MetadataCatalog.get(dataset_name).keypoint_names            = keypoint_names
+            MetadataCatalog.get(dataset_name).keypoint_flip_map         = keypoint_flip_map
+            MetadataCatalog.get(dataset_name).keypoint_connection_rules = [(x[0], x[1], (255,0,0)) for x in keypoint_flip_map] # Visualizer の内部で使用している
     return classes, keypoint_names
 
 
@@ -179,12 +186,13 @@ class Detector(DefaultTrainer):
         # set configuration
         self.cfg            = set_config(
             args=self.args, model_zoo_path=self.args.get("MODELZOO", str, "COCO-Detection/faster_rcnn_R_50_FPN_1x.yaml"), 
-            is_custom=(True if isinstance(self.coco_json_path, str) or isinstance(self.args.get("MODEL.WEIGHTS"), str)else False)
+            is_custom=(True if isinstance(self.coco_json_path, str) or isinstance(self.args.get("MODEL.WEIGHTS"), str) else False)
         )
         self.dataset_name   = self.cfg.DATASETS.TRAIN[0]
         classes, keypoint_names = register_catalogs(
             self.dataset_name, self.coco_json_path, self.image_root, 
-            classes=classes, keypoint_names=keypoint_names, keypoint_flip_map=keypoint_flip_map
+            classes=classes, keypoint_names=keypoint_names, keypoint_flip_map=keypoint_flip_map,
+            remove_dataset = False
         )
         # set FIX configuration
         self.cfg.INPUT.RANDOM_FLIP    = "none"
@@ -213,7 +221,8 @@ class Detector(DefaultTrainer):
                     dataset_name = f"validation{i_valid}"
                     _, _ = register_catalogs(
                         dataset_name, json_path, None if valid_image_root is None else valid_image_root[i_valid], 
-                        classes=classes, keypoint_names=keypoint_names, keypoint_flip_map=keypoint_flip_map
+                        classes=classes, keypoint_names=keypoint_names, keypoint_flip_map=keypoint_flip_map,
+                        remove_dataset = False
                     )
                     list_validator.append(Validator(self.cfg.clone(), dataset_name, trainer=self, steps=valid_steps, ndata=valid_ndata))
                 self.register_hooks(list_validator)
@@ -335,7 +344,7 @@ class Detector(DefaultTrainer):
         org_coco_filepath   = self.coco_json_path
         self.coco_json_path = outdir + "coco.augmentation.json"
         coco.save(self.coco_json_path)
-        _, _ = register_catalogs(self.dataset_name, self.coco_json_path, self.image_root)
+        _, _ = register_catalogs(self.dataset_name, self.coco_json_path, self.image_root, remove_dataset=True)
         if self.mapper is not None: self.mapper.is_preview = True
         super().__init__(self.cfg) # Change only the contents of the coco and create the instance again.
         count = 0
@@ -361,7 +370,7 @@ class Detector(DefaultTrainer):
             count += 1
             if count > max_images: break
         self.coco_json_path = org_coco_filepath
-        _, _ = register_catalogs(self.dataset_name, self.coco_json_path, self.image_root)
+        _, _ = register_catalogs(self.dataset_name, self.coco_json_path, self.image_root, remove_dataset=True)
         if self.mapper is not None: self.mapper.is_preview = False
         super().__init__(self.cfg) # Restore the contents of coco and create the instance again.
 
