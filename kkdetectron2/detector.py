@@ -1,5 +1,6 @@
 import os, time, json, datetime
 import numpy as np
+from numpy.lib.arraysetops import isin
 import pandas as pd
 import cv2
 from typing import List, Tuple, Union
@@ -23,6 +24,8 @@ from kkdetectron2.util.image import transform_img_from_dataloader
 from kkdetectron2.mapper import Mapper
 from kkimgaug.util.functions import convert_polygon_to_bool, fit_resize
 from kkannotation.coco import CocoManager
+from kkdetectron2.util.logger import set_logger
+logger = set_logger(__name__)
 
 
 __all__ = [
@@ -65,6 +68,7 @@ def set_config(
         setattr_deep(cfg, "SOLVER.CHECKPOINT_PERIOD", args.get("SOLVER.CHECKPOINT_PERIOD", int, 5000))
         setattr_deep(cfg, "SOLVER.WARMUP_ITERS",      args.get("SOLVER.WARMUP_ITERS",      int, 1000))
         setattr_deep(cfg, "VIS_PERIOD",               args.get("VIS_PERIOD",               int, 100))
+        setattr_deep(cfg, "TEST.DETECTIONS_PER_IMAGE",args.get("TEST.DETECTIONS_PER_IMAGE",int, 200))
     return cfg
 
 
@@ -103,7 +107,7 @@ def register_catalogs(
                 keypoint_flip_map = []
             MetadataCatalog.get(dataset_name).keypoint_names            = keypoint_names
             MetadataCatalog.get(dataset_name).keypoint_flip_map         = keypoint_flip_map
-            MetadataCatalog.get(dataset_name).keypoint_connection_rules = [(x[0], x[1], (255,0,0)) for x in keypoint_flip_map] # Visualizer の内部で使用している
+            MetadataCatalog.get(dataset_name).keypoint_connection_rules = [(x[0], x[1], (255,0,0)) for x in keypoint_flip_map] # Use inside Visualizer.
     return classes, keypoint_names
 
 
@@ -207,6 +211,7 @@ class Detector(DefaultTrainer):
         self.mapper = None if aug_json_file_path is None else Mapper(self.cfg, config=aug_json_file_path)
         if classes is not None: self.cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(classes)
         self.cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS = len(keypoint_names) if keypoint_names is not None else 0
+        self.classes = np.array(MetadataCatalog.get(self.dataset_name).thing_classes)
         if self.coco_json_path is not None:
             # create trainer instance
             super().__init__(self.cfg)
@@ -226,6 +231,7 @@ class Detector(DefaultTrainer):
                     )
                     list_validator.append(Validator(self.cfg.clone(), dataset_name, trainer=self, steps=valid_steps, ndata=valid_ndata))
                 self.register_hooks(list_validator)
+        logger.info(f"CLASSES: {self.classes}", color=["BOLD", "GREEN"])
 
     def build_train_loader(self, cfg) -> torch.utils.data.DataLoader:
         """
@@ -246,23 +252,23 @@ class Detector(DefaultTrainer):
     def predict(self, img: Union[str, np.ndarray]):
         if self.predictor is None: self.set_predictor()
         if isinstance(img, str): img = cv2.imread(img)
-        return self.predictor(img)
+        output = self.predictor(img)["instances"].to("cpu")
+        return output, self.classes[output.get("pred_classes").numpy()]
 
     def draw_annoetation(self, img: Union[str, np.ndarray], output: dict=None, only_best: bool=False, resize: int=None, show: bool=False):
         import detectron2.utils.visualizer
         detectron2.utils.visualizer._KEYPOINT_THRESHOLD = 0
         if isinstance(img, str): img = cv2.imread(img)
         metadata = MetadataCatalog.get(self.dataset_name)
-        if output is None: output = self.predict(img)
-        if only_best:
-            output["instances"] = output["instances"][0:1]
+        if output is None: output, _ = self.predict(img)
+        if only_best: output = output[0:1]
         v = Visualizer(
             img[:, :, ::-1],
             metadata=metadata, 
             scale=1.0, 
             instance_mode=ColorMode.IMAGE #ColorMode.IMAGE_BW # remove the colors of unsegmented pixels
         )
-        v   = v.draw_instance_predictions(output["instances"].to("cpu"))
+        v   = v.draw_instance_predictions(output)
         img = v.get_image()[:, :, ::-1]
         if resize is not None:
             img = fit_resize(img, "y", resize)
@@ -271,12 +277,12 @@ class Detector(DefaultTrainer):
             cv2.waitKey(0)
         return img
     
-    def to_coco_a_image(self, imgpath: str) -> dict:
-        assert isinstance(imgpath, str)
-        coco     = CocoManager()
-        metadata = MetadataCatalog.get(self.dataset_name)
-        output   = self.predict(imgpath)
-        output   = output["instances"].to("cpu")
+    def to_coco_a_image(self, img: Union[str, np.ndarray]) -> dict:
+        assert check_type(img, [str, np.ndarray])
+        imgpath   = "" if isinstance(img, np.ndarray) else img
+        coco      = CocoManager()
+        metadata  = MetadataCatalog.get(self.dataset_name)
+        output, _ = self.predict(img)
         height, width = output.image_size
         segmentations, keypoints = None, None
         try: segmentations = output.get("pred_masks").numpy()
