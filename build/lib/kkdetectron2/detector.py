@@ -29,7 +29,8 @@ logger = set_logger(__name__)
 
 
 __all__ = [
-    "Detector"
+    "Detector",
+    "Predictor",
 ]
 
 
@@ -247,13 +248,22 @@ class Detector(DefaultTrainer):
         self.set_predictor()
 
     def set_predictor(self):
-        self.predictor = DefaultPredictor(self.cfg)
+        self.predictor = Predictor(self.cfg)
 
-    def predict(self, img: Union[str, np.ndarray]):
+    def predict(self, img: Union[str, np.ndarray, List[str], List[np.ndarray]], batch_size: int=1):
+        assert isinstance(batch_size, int) and batch_size > 0
         if self.predictor is None: self.set_predictor()
-        if isinstance(img, str): img = cv2.imread(img)
-        output = self.predictor(img)["instances"].to("cpu")
-        return output, self.classes[output.get("pred_classes").numpy()]
+        if not isinstance(img, list): img = [img]
+        if check_type_list(img, str):
+            img = [cv2.imread(x) for x in img]
+        outputs = []
+        for i in range(len(img) // batch_size):
+            logger.info(f"predict i batch: {i}")
+            batch   = img[i*batch_size : (i+1)*batch_size]
+            output  = self.predictor.multi_predict(batch)
+            output  = [x["instances"].to("cpu") for x in output]
+            outputs = outputs + output
+        return outputs, [self.classes[x.get("pred_classes").numpy()] for x in outputs]
 
     def draw_annoetation(self, img: Union[str, np.ndarray], output: dict=None, only_best: bool=False, resize: int=None, show: bool=False):
         import detectron2.utils.visualizer
@@ -419,3 +429,19 @@ class Validator(HookBase):
             }
             self.loss_dict = loss_dict
             self.data_time = time.perf_counter() - start
+
+
+class Predictor(DefaultPredictor):
+    def multi_predict(self, list_images: List[np.ndarray]):
+        inputs = []
+        with torch.no_grad():
+            for original_image in list_images:
+                if self.input_format == "RGB":
+                    # whether the model expects BGR inputs or RGB
+                    original_image = original_image[:, :, ::-1]
+                height, width = original_image.shape[:2]
+                image = self.aug.get_transform(original_image).apply_image(original_image)
+                image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+                inputs.append({"image": image, "height": height, "width": width})
+            predictions = self.model(inputs)
+            return predictions

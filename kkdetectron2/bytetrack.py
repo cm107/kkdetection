@@ -1,14 +1,9 @@
 from typing import List
 import numpy as np
-import cv2
 import scipy
 from cython_bbox import bbox_overlaps
 import lap
-from kkdetectron2.util.image import xyxy_to_xyah, xyah_to_xyxy, xyxy_to_xywh
-from kkdetectron2.util.com import check_type_list
-from kkdetectron2.detector import Detector
-from kkannotation.streamer import Streamer, Recorder
-from kkannotation.util.image import draw_annotation
+from kkdetectron2.util.image import xyxy_to_xyah, xyah_to_xyxy
 from kkdetectron2.util.logger import set_logger
 logger = set_logger(__name__)
 
@@ -18,7 +13,6 @@ __all__ = [
     "TrackState",
     "BaseTrack",
     "BYTETracker",
-    "Tracker"
 ]
 
 
@@ -411,6 +405,13 @@ class BYTETracker(object):
         thre_iou_high: float=0.8, thre_iou_low: float=0.5, thre_iou_new: float=0.7, 
         max_time_lost=100
     ):
+        """
+        Parmas::
+            height, width: video size.
+            thre_iou_high:
+                high score bbox VS pool tracks, IoU threshold
+                if thre_iou_high=0.8, IoU < 0.2 is ignored in "lap".
+        """
         self.height, self.width = height, width
         self.tracked_stracks = []  # type: list[STrack]
         self.lost_stracks    = []  # type: list[STrack]
@@ -423,6 +424,9 @@ class BYTETracker(object):
         self.thre_iou_new    = thre_iou_new
         self.max_time_lost   = max_time_lost
         self.kalman_filter   = KalmanFilter()
+    
+    def init_trackid(self):
+        BaseTrack._count = 0
 
     def update(self, bboxes: np.ndarray, scores: np.ndarray):
         self.frame_id += 1
@@ -488,6 +492,18 @@ class BYTETracker(object):
         self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
         return [track for track in self.tracked_stracks if track.is_activated]
 
+    def tracking(self, list_bboxes: List[np.ndarray], list_scores: List[np.ndarray]) -> List[dict]:
+        assert isinstance(list_bboxes, list)
+        assert isinstance(list_scores, list)
+        assert len(list_bboxes) == len(list_scores)
+        self.init_trackid()
+        list_ouptuts = []
+        for bboxes, scores in zip(list_bboxes, list_scores):
+            tracks      = self.update(bboxes, scores)
+            dict_output = {track.track_id: track.to_xyxy() for track in tracks}
+            list_ouptuts.append(dict_output)
+        return list_ouptuts
+
 
 def joint_stracks(tlista, tlistb):
     exists = {}
@@ -531,57 +547,3 @@ def remove_duplicate_stracks(stracksa: List[STrack], stracksb: List[STrack]):
     resa = [t for i, t in enumerate(stracksa) if not i in dupa]
     resb = [t for i, t in enumerate(stracksb) if not i in dupb]
     return resa, resb
-
-
-class Tracker(Detector):
-    def __init__(
-        self, *args, 
-        video: str=None, thre_bbox_high: float=0.7, thre_bbox_low: float=0.2, 
-        thre_iou_high: float=0.8, thre_iou_low: float=0.5, thre_iou_new: float=0.7, 
-        max_time_lost=100, **kwargs
-    ):
-        isinstance(video, str)
-        super().__init__(*args, **kwargs)
-        self.streamer = Streamer(video)
-        self.tracker  = BYTETracker(
-            *self.streamer.shape(), thre_bbox_high=thre_bbox_high, thre_bbox_low=thre_bbox_low,
-            thre_iou_high=thre_iou_high, thre_iou_low=thre_iou_low, thre_iou_new=thre_iou_new,
-            max_time_lost=max_time_lost
-        )
-    
-    def tracking(self, target_classes: List[str], max_count: int=None, is_show=False, outfilepath: str=None, is_draw_prediction: bool=False) -> List[dict]:
-        assert check_type_list(target_classes, str)
-        assert max_count is not None and isinstance(max_count, int)
-        assert isinstance(is_show, bool)
-        assert outfilepath is not None and isinstance(outfilepath, str)
-        assert isinstance(is_draw_prediction, bool)
-        recorder = Recorder(
-            outfilepath, fps=self.streamer.get_fps(), 
-            width=self.streamer.shape()[1] * (2 if is_draw_prediction else 1), height=self.streamer.shape()[0]
-        ) if isinstance(outfilepath, str) else None
-        list_ouptuts = []
-        for i, frame in enumerate(self.streamer):
-            logger.info(f"frame id: {i}")
-            output, classes = self.predict(frame)
-            is_target   = np.isin(classes, target_classes)
-            bboxes      = output.get("pred_boxes").tensor.numpy()[is_target].astype(float)
-            scores      = output.get("scores").numpy()[is_target].astype(float)
-            tracks      = self.tracker.update(bboxes, scores)
-            dict_output = {track.track_id: track.to_xyxy() for track in tracks}
-            list_ouptuts.append(dict_output)
-            if is_show or (recorder is not None):
-                if is_draw_prediction:
-                    vis   = self.draw_annoetation(frame)
-                for track_id, bbox in dict_output.items():
-                    frame = draw_annotation(frame, xyxy_to_xywh([int(x) for x in bbox]), catecory_name=str(track_id), color_id=track_id)
-                if is_draw_prediction:
-                    frame = np.concatenate([frame, vis], axis=1)
-                if is_show:
-                    cv2.imshow(__name__, frame)
-                    cv2.waitKey(0)
-                if recorder is not None:
-                    recorder.write(frame)
-            if isinstance(max_count, int) and max_count <= i:
-                break
-        if recorder is not None: recorder.close()
-        return list_ouptuts
