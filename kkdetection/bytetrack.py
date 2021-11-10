@@ -3,8 +3,10 @@ import numpy as np
 import scipy
 from cython_bbox import bbox_overlaps
 import lap
-from kkdetectron2.util.image import xyxy_to_xyah, xyah_to_xyxy
-from kkdetectron2.util.logger import set_logger
+
+# local package
+from kkdetection.util.image import xyxy_to_xyah, xyah_to_xyxy
+from kkdetection.util.logger import set_logger
 logger = set_logger(__name__)
 
 

@@ -1,5 +1,5 @@
-from kkdetectron2.detector import Detector
-from kkdetectron2.util.com import get_args
+from kkdetection.detectron2.detector import Detector
+from kkdetection.util.com import get_args
 
 if __name__ == "__main__":
     args = get_args()
@@ -8,6 +8,9 @@ if __name__ == "__main__":
         detector.preview_augmentation([0,1])
     if args.get("train", None, False):
         detector.train()
-    if args.get("infer", None, False):
-        detector.draw_annoetation("./img/img_dog_cat.jpg", resize=1000, show=True)
-        coco = detector.to_coco(["./img/img_dog_cat.jpg"])
+    if args.get("infer") is not None:
+        file = args.get("infer")
+        detector.draw_annotation(file, resize=1000, show=True)
+        coco = detector.to_coco(file)
+        print(coco.df_json)
+        print(coco.df_json.iloc[0])

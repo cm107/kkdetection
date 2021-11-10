@@ -1,5 +1,8 @@
-# kkdetectron2
-- This package is wrapper package for detectron2( https://github.com/facebookresearch/detectron2 ).
+# kkdetection
+- This package has tools for some "object detection" packages.
+- Support for detectron2( https://github.com/facebookresearch/detectron2 ).
+- Support for bytetrack( https://arxiv.org/abs/2110.06864 )
+- Support for PaddleDetection( https://github.com/PaddlePaddle/PaddleDetection )
 
 ## Installation
 First, You will need to manually install pytorch for your machine environment (see: https://pytorch.org/get-started/locally/ )!!

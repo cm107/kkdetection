@@ -1,8 +1,6 @@
 import sys, os, shutil, re
 from typing import List, Union
 
-from numpy.lib.arraysetops import isin
-
 
 __all__ = [
     "MyDict",

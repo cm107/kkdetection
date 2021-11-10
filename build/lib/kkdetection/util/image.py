@@ -1,7 +1,9 @@
 from typing import Union, List
-from kkdetectron2.util.com import check_type_list
 import torch
 import numpy as np
+
+# local package
+from kkdetection.util.com import check_type_list
 
 
 __all__ = [

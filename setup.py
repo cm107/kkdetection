@@ -26,8 +26,8 @@ setup(
     ],
     install_requires=[
         'detectron2 @ git+https://github.com/facebookresearch/detectron2.git@d1e04565d3bec8719335b88be9e9b961bf3ec464',
-        'kkannotation @ git+https://github.com/kazukingh01/kkannotation.git',
-        'kkimgaug @ git+https://github.com/kazukingh01/kkimgaug.git',
+        'kkannotation @ git+https://github.com/kazukingh01/kkannotation.git@7e3761012e8b4916bffc1e7d087ba85959d1a127',
+        'kkimgaug @ git+https://github.com/kazukingh01/kkimgaug.git@5c4924fc7bdae4fafa1d3e57ec878e657ca8bcd1',
         'cython-bbox>=0.1.3',
         'lap>=0.4.0',
     ],

@@ -1,11 +1,11 @@
 import numpy as np
 import cv2
-from kkdetectron2.bytetrack import BYTETracker
-from kkdetectron2.detector import Detector
+from kkdetection.bytetrack import BYTETracker
+from kkdetection.detectron2.detector import Detector
 from kkannotation.streamer import Streamer, Recorder
 from kkannotation.util.image import draw_annotation
-from kkdetectron2.util.image import xyxy_to_xywh
-from kkdetectron2.util.com import get_args
+from kkdetection.util.image import xyxy_to_xywh
+from kkdetection.util.com import get_args
 
 
 if __name__ == "__main__":
