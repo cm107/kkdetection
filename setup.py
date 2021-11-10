@@ -2,19 +2,19 @@ from setuptools import setup, find_packages
 
 packages = find_packages(
         where='.',
-        include=['kkdetectron2*']
+        include=['kkdetection*']
 )
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
-    name='kkdetectron2',
+    name='kkdetection',
     version='1.0.0',
-    description='my detectron2 library.',
+    description='my object detection library.',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/kazukingh01/kkdetectron2",
+    url="https://github.com/kazukingh01/kkdetection",
     author='kazuking',
     author_email='kazukingh01@gmail.com',
     license='Public License',
