@@ -1,3 +1,3 @@
-from kkdetectron2.util import com
-from kkdetectron2.util import image
-from kkdetectron2.util import logger
+from kkdetection.util import com
+from kkdetection.util import image
+from kkdetection.util import logger

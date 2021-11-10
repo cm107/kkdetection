@@ -1,4 +1,3 @@
-from kkdetectron2 import detector
-from kkdetectron2 import util
-from kkdetectron2 import mapper
-from kkdetectron2 import bytetrack
+from kkdetection import detectron2
+from kkdetection import util
+from kkdetection import bytetrack
