@@ -13,8 +13,12 @@ python -i train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
 # training GPU + fp16
 python -i train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
     --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco.pdparams \
-    --coco_json_path ./img/coco.json --image_root ./img/ --batch_size_train 1 --epoch 10 ---use_gpu ---fp16
-# inference
+    --coco_json_path ./img/coco.json --image_root ./img/ --batch_size 1 --epoch 10 ---use_gpu ---fp16
+# inference image
 python -i train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
     --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco.pdparams \
     --img /home/share/10.git/kkdetection/tests/img/img_dog_cat.jpg
+# inference video
+python -i train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
+    --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco.pdparams \
+    --video ./palace.h264.mp4

@@ -101,13 +101,18 @@ EvalDataset:
     anno_path: {path_coco}
     dataset_dir: {dataset_dir}
 """
-    def set_test_dataset(self, path_dir: str):
+    def set_test_dataset_image(self, path_dir: str):
         image_dir, _, dataset_dir = self.check_dataset_attr(path_dir, None)
         self.yaml += f"""
-TestDataset:
-  !ImageFolder
+TestImageDataset:
+  !ImageDataset
     image_dir: {image_dir}
     dataset_dir: {dataset_dir}
+"""
+    def set_test_dataset_video(self):
+        self.yaml += f"""
+TestVideoDataset:
+  !VideoDataset
 """
     def set_train_batchsize(self, value: int):
         assert isinstance(value, int)

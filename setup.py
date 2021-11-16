@@ -26,8 +26,10 @@ setup(
     ],
     install_requires=[
         'detectron2 @ git+https://github.com/facebookresearch/detectron2.git@d1e04565d3bec8719335b88be9e9b961bf3ec464',
-        'kkannotation @ git+https://github.com/kazukingh01/kkannotation.git@7e3761012e8b4916bffc1e7d087ba85959d1a127',
+        'kkannotation @ git+https://github.com/kazukingh01/kkannotation.git@35e5169dd8fd5999077ea2e6c78b1e51f1643586',
         'kkimgaug @ git+https://github.com/kazukingh01/kkimgaug.git@5c4924fc7bdae4fafa1d3e57ec878e657ca8bcd1',
+        'paddledet @ git+https://github.com/PaddlePaddle/PaddleDetection.git@a769ae3a38509b4f143a9dc0a28e0ec9b153fb1d',
+        'Cython>=0.29.24',
         'cython-bbox>=0.1.3',
         'lap>=0.4.0',
     ],

@@ -30,6 +30,7 @@ output*/
 preview_augmentation/
 configs/
 output_tracking.mp4
+*output/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
