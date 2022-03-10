@@ -3,8 +3,6 @@ import cv2
 from kkdetection.bytetrack import BYTETracker
 from kkdetection.ppdet.detector import Detector
 from kkdetection.ppdet.dataset import VideoDataset
-
-
 from kkannotation.streamer import Recorder
 from kkannotation.util.image import draw_annotation
 from kkdetection.util.image import xyxy_to_xywh

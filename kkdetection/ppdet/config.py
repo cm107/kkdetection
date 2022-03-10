@@ -67,12 +67,22 @@ class CreatePPDetYaml(object):
     def set_weights(self, value: str):
         assert isinstance(value, str)
         self.yaml += f"weights: {value}\n"
+    def set_pretrain_weights(self, value: str):
+        assert isinstance(value, str)
+        self.yaml += f"pretrain_weights: {value}\n"
     def set_num_classes(self, value: int):
         assert isinstance(value, int) and value > 0
         self.yaml += f"num_classes: {value}\n"
     def set_epoch(self, value: int):
         assert isinstance(value, int) and value > 0
         self.yaml += f"epoch: {value}\n"
+    def set_worker_num(self, value: int):
+        assert isinstance(value, int) and value >= 0
+        self.yaml += f"worker_num: {value}\n"
+        self.yaml += f"""
+TestReader:
+   worker_num: {value}
+"""
     @classmethod
     def check_dataset_attr(cls, path_dir: str, path_coco: str):
         assert isinstance(path_dir, str)  and os.path.exists(path_dir)
