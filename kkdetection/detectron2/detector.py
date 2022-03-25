@@ -328,7 +328,7 @@ class Detector(DefaultTrainer):
                     keypoints=keypoint, category_name_kpts=metadata.get("keypoint_names")
                 )
         coco.concat_added()
-        coco.df_json["annotations_score"] = [round(x, 3) for x in output.get("scores").numpy().tolist()]
+        coco.df_json["annotations_score"] = np.concatenate([x.get("scores").numpy() for x in outputs])
         if keypoints is not None:
             coco.df_json["annotations_score_keypoints"] = [[round(x, 3) for x in y] for y in keypoints[:, :, 2].tolist()]
         if supercategory is not None:
