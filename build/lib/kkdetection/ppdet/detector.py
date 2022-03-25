@@ -1,6 +1,7 @@
 import os, datetime
 from typing import List, Union
 import cv2
+from numpy import isin
 import paddle
 from ppdet.engine import Trainer, set_random_seed
 from ppdet.core.workspace import load_config
@@ -53,13 +54,14 @@ class Detector(Trainer):
         # validation params
         batch_size_valid: int=1,
         # other parameters
-        use_gpu: bool=False, random_seed: int=0, is_override: bool=False, 
+        use_gpu: bool=False, random_seed: int=0, is_override: bool=False, worker_num: int=1,
         outdir: str=f"./output{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
         **kwargs
     ):
         assert isinstance(outdir, str)
         assert isinstance(random_seed, int) and random_seed >= 0
         assert isinstance(num_classes, int) and num_classes > 0
+        assert isinstance(worker_num, int) and worker_num >= 0
         outdir = correct_dirpath(outdir)
         # download base config files
         basefile = download_config_files(config_url_path, basedir=base_configs_dir, is_override=is_override)[0]
@@ -83,8 +85,11 @@ class Detector(Trainer):
             yaml_add.set_eval_batchsize(batch_size_valid)
         # other parameters
         yaml_add.set_num_classes(num_classes)
-        if isinstance(outdir, str):
-            yaml_add.set_save_dir(outdir)
+        yaml_add.set_worker_num(worker_num)
+        self.worker_num = worker_num
+        if isinstance(outdir, str): yaml_add.set_save_dir(outdir)
+        yaml_add.set_weights(weights)
+        yaml_add.set_pretrain_weights(weights)
         yaml_add.set_use_gpu(use_gpu)
         paddle.distributed.init_parallel_env()
         set_random_seed(random_seed)
@@ -107,29 +112,22 @@ class Detector(Trainer):
         check_version()
         super().__init__(cfg, mode=mode)
         if isinstance(weights, str): self.load_weights(weights)
-
-    def set_dataloader(self, dataset: DetDataset, name_reader: str="TestReader"):
-        assert isinstance(dataset, DetDataset) and hasattr(dataset, "set_data")
-        self.dataset    = dataset
-        self.dataloader = create(name_reader)(self.dataset, 0)
     
-    def predict(self, images: Union[str, List[str]]=None):
-        if images is not None:
-            if not isinstance(images, list): images = [images]
-            assert check_type_list(images, str)
-            dataset = ImageDataset()
-            dataset.set_data(images)
-            self.set_dataloader(dataset)
+    def predict(self, data):
+        outs = self.model(data)
+        for key in ['im_shape', 'scale_factor', 'im_id']:
+            outs[key] = data[key]
+        for key, value in outs.items():
+            if hasattr(value, 'numpy'):
+                outs[key] = value.numpy()
+        return outs
+
+    def predict_dataloader(self, dataloader):
         self.model.eval()
         results = []
-        for step_id, data in enumerate(self.dataloader):
+        for step_id, data in enumerate(dataloader):
             self.status['step_id'] = step_id
-            outs = self.model(data)
-            for key in ['im_shape', 'scale_factor', 'im_id']:
-                outs[key] = data[key]
-            for key, value in outs.items():
-                if hasattr(value, 'numpy'):
-                    outs[key] = value.numpy()
+            outs = self.predict(data)
             results.append(outs)
         return results
 
