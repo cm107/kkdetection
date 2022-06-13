@@ -30,6 +30,7 @@ class VideoDataset(DetDataset):
         self, video_file_path: str=None, reverse: bool=False, start_frame_id: int=0, 
         max_frames: int=None, step: int=1
     ):
+        if isinstance(self.streamer, Streamer): self.streamer.__del__()
         self.streamer = Streamer(
             video_file_path, 
             reverse=reverse, start_frame_id=start_frame_id, 
@@ -38,7 +39,6 @@ class VideoDataset(DetDataset):
         self._len = len(self.streamer)
         self._height, self._width = self.streamer.shape()
         self.parse_dataset(is_force_load=True)
-        self.streamer.__del__()
     def check_or_download_dataset(self): pass
     def parse_dataset(self, is_force_load: bool=False):
         if is_force_load or self.roidbs is None:

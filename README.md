@@ -6,12 +6,23 @@
 
 ## Installation
 1. Pytorch
+
 First, You will need to manually install pytorch for your machine environment (see: https://pytorch.org/get-started/locally/ )!!
-ex) pip3 install torch==1.8.2+cu111 torchvision==0.9.2+cu111 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html
+
+ex) pip3 install torch torchvision --extra-index-url https://download.pytorch.org/whl/cu113
+
 2. PaddlePaddle
-If you want to use PaddleDetection, you need installing PaddlePaddle( see: https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/install/pip/linux-pip.html ).
-ex) python -m pip install paddlepaddle-gpu==2.2.0.post111 -f https://www.paddlepaddle.org.cn/whl/linux/mkl/avx/stable.html
-and you can check with command 'python -c "import paddle; paddle.utils.run_check()"'
+
+If you want to use PaddleDetection, you need installing PaddlePaddle( see: https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/develop/install/pip/linux-pip.html ).
+
+ex)
+```
+python -m pip install paddlepaddle-gpu==2.2.2.post111 -f https://www.paddlepaddle.org.cn/whl/linux/mkl/avx/stable.html
+# If cpu, python -m pip install paddlepaddle==2.2.2 -i https://mirror.baidu.com/pypi/simple
+pip install protobuf==3.20.1
+python -c "import paddle; paddle.utils.run_check()"
+```
+
 ```
 (kkdetection) root@593514f23031:~# python -c "import paddle; paddle.utils.run_check()"
 Running verify PaddlePaddle program ... 
@@ -22,11 +33,15 @@ PaddlePaddle works well on 1 GPU.
 PaddlePaddle works well on 1 GPUs.
 PaddlePaddle is installed successfully! Let's start deep learning with PaddlePaddle now.
 ```
+
 3. Cython
+
 ```
 pip install Cython
 ```
+
 3. kkdetection
+
 ```
 pip install 'git+https://github.com/kazukingh01/kkdetectron2.git'
 ```

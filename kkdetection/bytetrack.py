@@ -433,7 +433,7 @@ class BYTETracker(object):
     def init_trackid(self):
         BaseTrack._count = 0
 
-    def update(self, bboxes: np.ndarray, scores: np.ndarray):
+    def update(self, bboxes: np.ndarray, scores: np.ndarray, is_return_lost: bool=False):
         """
         Params::
             bboxes: numpy array (x1, y1, x2, y2)
@@ -499,9 +499,12 @@ class BYTETracker(object):
         self.lost_stracks    = sub_stracks(self.lost_stracks, self.removed_stracks)
         self.removed_stracks.extend(removed_stracks)
         self.tracked_stracks, self.lost_stracks = remove_duplicate_stracks(self.tracked_stracks, self.lost_stracks)
-        return [track for track in self.tracked_stracks if track.is_activated]
+        output = [track for track in self.tracked_stracks if track.is_activated]
+        if is_return_lost:
+            output = output + [track for track in self.lost_stracks if track.is_activated]
+        return output
 
-    def tracking(self, list_bboxes: List[np.ndarray], list_scores: List[np.ndarray], ret_type: str="xyxy") -> List[dict]:
+    def tracking(self, list_bboxes: List[np.ndarray], list_scores: List[np.ndarray], ret_type: str="xyxy", is_return_lost: bool=False) -> List[dict]:
         assert isinstance(list_bboxes, list)
         assert isinstance(list_scores, list)
         assert len(list_bboxes) == len(list_scores)
@@ -509,7 +512,7 @@ class BYTETracker(object):
         self.init_trackid()
         list_ouptuts = []
         for bboxes, scores in zip(list_bboxes, list_scores):
-            tracks      = self.update(bboxes, scores)
+            tracks      = self.update(bboxes, scores, is_return_lost=is_return_lost)
             dict_output = {track.track_id: getattr(track, f"to_{ret_type}")() for track in tracks}
             list_ouptuts.append(dict_output)
         return list_ouptuts

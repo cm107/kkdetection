@@ -79,10 +79,6 @@ class CreatePPDetYaml(object):
     def set_worker_num(self, value: int):
         assert isinstance(value, int) and value >= 0
         self.yaml += f"worker_num: {value}\n"
-        self.yaml += f"""
-TestReader:
-   worker_num: {value}
-"""
     @classmethod
     def check_dataset_attr(cls, path_dir: str, path_coco: str):
         assert isinstance(path_dir, str)  and os.path.exists(path_dir)
@@ -124,15 +120,42 @@ TestImageDataset:
 TestVideoDataset:
   !VideoDataset
 """
-    def set_train_batchsize(self, value: int):
-        assert isinstance(value, int)
-        self.yaml += f"TrainReader:\n{self.space}batch_size: {value}\n"
+    def set_train_reader(self, batch_size: int, autoaug: bool=False):
+        assert isinstance(batch_size, int)
+        assert isinstance(autoaug, bool)
+        self.yaml += f"""
+TrainReader:
+  batch_size: {batch_size}
+"""
+        if autoaug:
+            self.yaml += """  sample_transforms:
+  - Decode: {}
+  - AutoAugment: {autoaug_type: v1}
+  - RandomCrop: {}
+  - RandomFlip: {prob: 0.5}
+  - RandomDistort: {}
+  use_shared_memory: true
+
+"""
+    def set_test_reader(self, batch_size: int, worker_num: int):
+        assert isinstance(batch_size, int)
+        assert isinstance(worker_num, int)
+        self.yaml += f"TestReader:\n{self.space}batch_size: {batch_size}\n{self.space}worker_num: {worker_num}\n{self.space}use_shared_memory: false\n"
     def set_eval_batchsize(self, value: int):
         assert isinstance(value, int)
         self.yaml += f"EvalReader:\n{self.space}batch_size: {value}\n"
-    def set_test_batchsize(self, value: int):
-        assert isinstance(value, int)
-        self.yaml += f"TestReader:\n{self.space}batch_size: {value}\n"
+    def set_head_parameer(self, nms_threshold: float=0.6, score_threshold: float=0.025, n_bboxes: int=100, class_name: str="PicoHead"):
+        assert nms_threshold   is None or isinstance(nms_threshold, float)
+        assert score_threshold is None or isinstance(score_threshold, float)
+        assert n_bboxes        is None or isinstance(n_bboxes, int)
+        assert nms_threshold is not None or score_threshold is not None or n_bboxes is not None
+        self.yaml += f"{class_name}:\n{self.space}nms:\n"
+        if n_bboxes is not None:
+            self.yaml += f"{self.space}{self.space}keep_top_k: {n_bboxes}\n"
+        if score_threshold is not None:
+            self.yaml += f"{self.space}{self.space}score_threshold: {score_threshold}\n"
+        if nms_threshold is not None:
+            self.yaml += f"{self.space}{self.space}nms_threshold: {nms_threshold}\n"
     def save(self, filepath: str):
         with open(filepath, mode="w") as f:
             f.write(self.yaml)

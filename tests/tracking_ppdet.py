@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+from ppdet.core.workspace import create
 from kkdetection.bytetrack import BYTETracker
 from kkdetection.ppdet.detector import Detector
 from kkdetection.ppdet.dataset import VideoDataset
@@ -13,7 +14,7 @@ if __name__ == "__main__":
     args     = get_args()
     detector = Detector(**args.autofix())
     dataset = VideoDataset()
-    dataset.set_data(args.get("video"), start_frame_id=0, max_frames=200, step=2)
+    dataset.set_data(args.get("video"), start_frame_id=0, max_frames=10, step=2)
     recorder = Recorder("./output_tracking.mp4", fps=dataset.streamer.get_fps(), width=dataset.streamer.shape()[1], height=dataset.streamer.shape()[0])
     tracker  = BYTETracker(
         dataset.streamer.shape()[0], dataset.streamer.shape()[1], 
@@ -22,8 +23,8 @@ if __name__ == "__main__":
         max_time_lost=50
     )
     target_class_id = args.get("target", int, 0)
-    detector.set_dataloader(dataset)
-    outputs     = detector.predict()
+    dataloader = create("TestReader")(dataset, 0)
+    outputs     = detector.predict_dataloader(dataloader)
     outputs     = [x["bbox"] for x in outputs]
     list_bboxes = [x[x[:, 0] == target_class_id][:, 2:].astype(float) for x in outputs]
     list_scores = [x[x[:, 0] == target_class_id][:, 1 ].astype(float) for x in outputs]
