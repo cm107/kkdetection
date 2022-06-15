@@ -42,10 +42,10 @@ class Detector(Trainer):
         self, 
         # base config file
         config_url_path: str="ppyolo/ppyolo_r50vd_dcn_1x_coco.yml",
-        base_configs_dir: str=BASE_CONFIGS_DIR, num_classes: int=None,
+        base_configs_dir: str=BASE_CONFIGS_DIR, num_classes: int=None, num_joints: int=None,
         weights: str="https://paddledet.bj.bcebos.com/models/ppyolo_r50vd_dcn_1x_coco.pdparams",
         # train coco dataset
-        coco_json_path: str=None, image_root: str=None,
+        coco_json_path: str=None, image_root: str=None, is_kpt: bool=False,
         # train params
         batch_size: int=1, epoch: int=1, autoaug: bool=False,
         # validation coco dataset
@@ -63,10 +63,12 @@ class Detector(Trainer):
         assert isinstance(outdir, str)
         assert isinstance(random_seed, int) and random_seed >= 0
         assert isinstance(num_classes, int) and num_classes > 0
+        assert num_joints is None or (isinstance(num_joints, int) and num_joints > 0)
         assert isinstance(worker_num, int) and worker_num >= 0
         outdir = correct_dirpath(outdir)
         # download base config files
         basefile = download_config_files(config_url_path, basedir=base_configs_dir, is_override=is_override)[0]
+        cfgbase  = load_config(basefile)
         # add config setting
         yaml_add = CreatePPDetYaml()
         yaml_add.set_base("../" + basefile)
@@ -74,11 +76,14 @@ class Detector(Trainer):
         mode = "test"
         yaml_add.set_worker_num(worker_num)
         self.worker_num = worker_num
+        if is_kpt:
+            assert num_joints is not None
+            yaml_add.set_keypoint_paramter(num_joints, cfgbase["pixel_std"], cfgbase["train_height"], cfgbase["train_width"], cfgbase["hmsize"])
         if isinstance(coco_json_path, str):
             assert isinstance(image_root, str)
             mode = "train"
-            yaml_add.set_train_dataset(image_root, coco_json_path)
-            yaml_add.set_train_reader(batch_size, autoaug=autoaug)
+            yaml_add.set_train_dataset(image_root, coco_json_path, is_kpt=is_kpt)
+            yaml_add.set_train_reader(batch_size, autoaug=autoaug, is_kpt=is_kpt)
             yaml_add.set_epoch(epoch)
         else:
             yaml_add.set_test_reader(batch_size, worker_num)
@@ -87,7 +92,7 @@ class Detector(Trainer):
         if isinstance(coco_json_path_valid, str):
             assert isinstance(image_root_valid, str)
             self.is_validate = True
-            yaml_add.set_eval_dataset(image_root_valid, coco_json_path_valid)
+            yaml_add.set_eval_dataset(image_root_valid, coco_json_path_valid, is_kpt=is_kpt)
             yaml_add.set_eval_batchsize(batch_size_valid)
         # set head parameter
         if nms_threshold is not None or score_threshold is not None or n_bboxes is not None:
@@ -98,6 +103,7 @@ class Detector(Trainer):
         yaml_add.set_weights(weights)
         yaml_add.set_pretrain_weights(weights)
         yaml_add.set_use_gpu(use_gpu)
+        yaml_add.set_snapshot_epoch(100)
         paddle.distributed.init_parallel_env()
         set_random_seed(random_seed)
         # kwargs set
@@ -135,6 +141,11 @@ class Detector(Trainer):
             for x in dataloader:
                 data = x
                 break
+        if self.cfg.get("pixel_std") is not None:
+            data["im_id"] = data["im_id"][0]
+            center, scale = self.box2cs(data["im_shape"].numpy())
+            data["center"] = paddle.to_tensor(center)
+            data["scale"]  = paddle.to_tensor(scale)
         outs = self.model(data)
         for key in ['im_shape', 'scale_factor', 'im_id']:
             outs[key] = data[key]
@@ -189,13 +200,22 @@ class Detector(Trainer):
         assert isinstance(img, str)
         output = self.predict(img)
         img    = cv2.imread(img)
-        for class_id, score, x1, y1, x2, y2 in output["bbox"].astype(float):
-            if score < threshold: continue
-            class_id      = int(class_id)
-            catecory_name = str(class_id) if classes is None else classes[class_id]
-            img = draw_annotation(
-                img, [x1, y1, x2-x1, y2-y1], catecory_name=catecory_name, color_id=class_id
-            )
+        if "bbox" in output:
+            for class_id, score, x1, y1, x2, y2 in output["bbox"].astype(float):
+                if score < threshold: continue
+                class_id      = int(class_id)
+                catecory_name = str(class_id) if classes is None else classes[class_id]
+                img = draw_annotation(
+                    img, bbox=[x1, y1, x2-x1, y2-y1], catecory_name=catecory_name, color_id=class_id
+                )
+        if "keypoint" in output:
+            for outkpt, _ in output["keypoint"]:
+                for i_outkpt in outkpt:
+                    boolwk = (i_outkpt[:, 2] >= threshold)
+                    i_outkpt[boolwk, 2] = 2
+                    img = draw_annotation(
+                        img, keypoints=[float(x) for x in i_outkpt[boolwk].reshape(-1)],
+                    )
         if is_show:
             cv2.imshow(__name__, img)
             cv2.waitKey(0)
@@ -206,3 +226,27 @@ class Detector(Trainer):
         logger.info("START")
         super().train(validate=self.is_validate)
         logger.info("END")
+
+    def box2cs(self, im_shape: np.ndarray):
+        """
+        Use for keypoint
+        refer: https://github.com/PaddlePaddle/PaddleDetection/blob/b615336fe3a9ff740fdb1b889be7bc865b6d20fa/ppdet/data/source/keypoint_coco.py#L517
+        Params::
+            im_shape:
+                h, w
+            trainsize:
+                train_width, train_height
+        """
+        assert isinstance(im_shape, np.ndarray)
+        im_shape     = im_shape.copy().astype(np.float32) - 1
+        trainsize    = self.cfg["trainsize"]
+        pixel_std    = self.cfg["pixel_std"]
+        center       = (im_shape / 2)[:, ::-1]
+        h, w         = im_shape[:, 0], im_shape[:, 1]
+        aspect_ratio = trainsize[0] * 1.0 / trainsize[1]
+        boolwk       = (w > (aspect_ratio * h))
+        im_shape[ boolwk, 0] = w[ boolwk] / aspect_ratio
+        im_shape[~boolwk, 1] = h[~boolwk] * aspect_ratio
+        scale = np.stack([im_shape[:, 1] / pixel_std, im_shape[:, 0] / pixel_std]).astype(np.float32).T
+        scale = scale * 1.25
+        return center, scale

@@ -64,6 +64,9 @@ class CreatePPDetYaml(object):
     def set_save_dir(self, value: str):
         assert isinstance(value, str)
         self.yaml += f"save_dir: {value}\n"
+    def set_snapshot_epoch(self, value: str):
+        assert isinstance(value, int)
+        self.yaml += f"snapshot_epoch: {value}\n"
     def set_weights(self, value: str):
         assert isinstance(value, str)
         self.yaml += f"weights: {value}\n"
@@ -88,9 +91,22 @@ class CreatePPDetYaml(object):
         image_dir   = path_dir.split("/")[-1]
         dataset_dir = "/".join(path_dir.split("/")[:-1])
         return image_dir, path_coco, dataset_dir
-    def set_train_dataset(self, path_dir: str, path_coco: str):
+    def set_train_dataset(self, path_dir: str, path_coco: str, is_kpt: bool=False):
         image_dir, path_coco, dataset_dir = self.check_dataset_attr(path_dir, path_coco)
-        self.yaml += f"""
+        if is_kpt:
+            self.yaml += f"""
+TrainDataset:
+  !KeypointTopDownCocoDataset
+    image_dir: {image_dir}
+    anno_path: {path_coco}
+    dataset_dir: {dataset_dir}
+    num_joints: *num_joints
+    trainsize: *trainsize
+    pixel_std: *pixel_std
+    use_gt_bbox: True
+"""
+        else:
+            self.yaml += f"""
 TrainDataset:
   !COCODataSet
     image_dir: {image_dir}
@@ -98,9 +114,23 @@ TrainDataset:
     dataset_dir: {dataset_dir}
     data_fields: ['image', 'gt_bbox', 'gt_class', 'is_crowd']
 """
-    def set_eval_dataset(self, path_dir: str, path_coco: str):
+    def set_eval_dataset(self, path_dir: str, path_coco: str, is_kpt: bool=False):
         image_dir, path_coco, dataset_dir = self.check_dataset_attr(path_dir, path_coco)
-        self.yaml += f"""
+        if is_kpt:
+            self.yaml += f"""
+EvalDataset:
+  !KeypointTopDownCocoDataset
+    image_dir: {image_dir}
+    anno_path: {path_coco}
+    dataset_dir: {dataset_dir}
+    num_joints: *num_joints
+    trainsize: *trainsize
+    pixel_std: *pixel_std
+    use_gt_bbox: True
+    image_thre: 0.5
+"""
+        else:
+            self.yaml += f"""
 EvalDataset:
   !COCODataSet
     image_dir: {image_dir}
@@ -120,7 +150,7 @@ TestImageDataset:
 TestVideoDataset:
   !VideoDataset
 """
-    def set_train_reader(self, batch_size: int, autoaug: bool=False):
+    def set_train_reader(self, batch_size: int, autoaug: bool=False, is_kpt: bool=False):
         assert isinstance(batch_size, int)
         assert isinstance(autoaug, bool)
         self.yaml += f"""
@@ -128,6 +158,7 @@ TrainReader:
   batch_size: {batch_size}
 """
         if autoaug:
+            assert is_kpt == False
             self.yaml += """  sample_transforms:
   - Decode: {}
   - AutoAugment: {autoaug_type: v1}
@@ -135,7 +166,16 @@ TrainReader:
   - RandomFlip: {prob: 0.5}
   - RandomDistort: {}
   use_shared_memory: true
-
+"""
+        if is_kpt:
+            assert autoaug == False
+            self.yaml += """  sample_transforms:
+  - TopDownAffine:
+      trainsize: *trainsize
+      use_udp: true
+  - ToHeatmapsTopDown_DARK:
+      hmsize: *hmsize
+      sigma: 1
 """
     def set_test_reader(self, batch_size: int, worker_num: int):
         assert isinstance(batch_size, int)
@@ -156,6 +196,26 @@ TrainReader:
             self.yaml += f"{self.space}{self.space}score_threshold: {score_threshold}\n"
         if nms_threshold is not None:
             self.yaml += f"{self.space}{self.space}nms_threshold: {nms_threshold}\n"
+    def set_keypoint_paramter(self, num_joints: int, pixel_std: int, train_height: int, train_width: int, hmsize: List[int]):
+        assert isinstance(num_joints, int)
+        assert isinstance(pixel_std, int)
+        assert isinstance(train_height, int)
+        assert isinstance(train_width, int)
+        assert isinstance(hmsize, list)
+        self.yaml += f"""
+num_joints: &num_joints {num_joints}
+pixel_std: &pixel_std {pixel_std}
+train_height: &train_height {train_height}
+train_width: &train_width {train_width}
+trainsize: &trainsize [*train_width, *train_height]
+flip_perm: &flip_perm []
+hmsize: &hmsize {hmsize}
+
+TopDownHRNet:
+  flip_perm: *flip_perm
+  num_joints: *num_joints
+  flip: false
+"""
     def save(self, filepath: str):
         with open(filepath, mode="w") as f:
             f.write(self.yaml)
