@@ -504,15 +504,21 @@ class BYTETracker(object):
             output = output + [track for track in self.lost_stracks if track.is_activated]
         return output
 
-    def tracking(self, list_bboxes: List[np.ndarray], list_scores: List[np.ndarray], ret_type: str="xyxy", is_return_lost: bool=False) -> List[dict]:
+    def tracking(self, list_bboxes: List[np.ndarray], list_scores: List[np.ndarray], ret_type: str="xyxy", is_return_lost: bool=False, n_tracks: int=None, **kwargs) -> List[dict]:
         assert isinstance(list_bboxes, list)
         assert isinstance(list_scores, list)
         assert len(list_bboxes) == len(list_scores)
         assert isinstance(ret_type, str) and ret_type in ["xyxy", "xyah"]
+        assert n_tracks is None or (isinstance(n_tracks, int) and n_tracks > 0)
         self.init_trackid()
+        for x, y in kwargs.items():
+            assert hasattr(self, x)
+            setattr(self, x, y)
         list_ouptuts = []
         for bboxes, scores in zip(list_bboxes, list_scores):
-            tracks      = self.update(bboxes, scores, is_return_lost=is_return_lost)
+            tracks = self.update(bboxes, scores, is_return_lost=is_return_lost)
+            if n_tracks is not None:
+                tracks = np.array(tracks)[np.argsort(np.array([x.tracklet_len for x in tracks]))[-n_tracks:]].tolist()
             dict_output = {track.track_id: getattr(track, f"to_{ret_type}")() for track in tracks}
             list_ouptuts.append(dict_output)
         return list_ouptuts

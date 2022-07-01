@@ -82,6 +82,12 @@ class CreatePPDetYaml(object):
     def set_worker_num(self, value: int):
         assert isinstance(value, int) and value >= 0
         self.yaml += f"worker_num: {value}\n"
+    def set_learning_rate(self, base_lr: int):
+        assert isinstance(base_lr, float) and base_lr >= 0
+        self.yaml += f"""
+LearningRate:
+  base_lr: {base_lr}
+"""
     @classmethod
     def check_dataset_attr(cls, path_dir: str, path_coco: str):
         assert isinstance(path_dir, str)  and os.path.exists(path_dir)
@@ -170,6 +176,11 @@ TrainReader:
         if is_kpt:
             assert autoaug == False
             self.yaml += """  sample_transforms:
+  - AugmentationbyInformantionDropping:
+      prob_cutout: 0.5
+      offset_factor: 0.05
+      num_patch: 1
+      trainsize: *trainsize
   - TopDownAffine:
       trainsize: *trainsize
       use_udp: true
@@ -180,7 +191,7 @@ TrainReader:
     def set_test_reader(self, batch_size: int, worker_num: int):
         assert isinstance(batch_size, int)
         assert isinstance(worker_num, int)
-        self.yaml += f"TestReader:\n{self.space}batch_size: {batch_size}\n{self.space}worker_num: {worker_num}\n{self.space}use_shared_memory: false\n"
+        self.yaml += f"TestReader:\n{self.space}batch_size: {batch_size}\n"
     def set_eval_batchsize(self, value: int):
         assert isinstance(value, int)
         self.yaml += f"EvalReader:\n{self.space}batch_size: {value}\n"

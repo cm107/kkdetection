@@ -10,7 +10,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='kkdetection',
-    version='1.0.3',
+    version='1.0.4',
     description='my object detection library.',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -26,9 +26,9 @@ setup(
     ],
     install_requires=[
         'detectron2 @ git+https://github.com/facebookresearch/detectron2.git@c9cf7c91c454bb875705af1b7f01e2a15da0d18f',
-        'kkannotation @ git+https://github.com/kazukingh01/kkannotation.git@c70674001b916ee7437f50bbddee0ca7f440537e',
+        'kkannotation @ git+https://github.com/kazukingh01/kkannotation.git@da938d026a8ad6edf1e556efa010067dc488fc50',
         'kkimgaug @ git+https://github.com/kazukingh01/kkimgaug.git@d4a715b4ff25988ce4b17324f9843c04dc99fd1a',
-        'paddledet @ git+https://github.com/PaddlePaddle/PaddleDetection.git@2a4c8f4b65d5270419e539d2d3917f91075128c6',
+        'paddledet @ git+https://github.com/PaddlePaddle/PaddleDetection.git@eaf2dbe091d79f4824329ea885503e5f08fbb7ec',
         'Cython>=0.29.24',
         'cython-bbox>=0.1.3',
         'lap>=0.4.0',

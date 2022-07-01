@@ -47,7 +47,7 @@ class Detector(Trainer):
         # train coco dataset
         coco_json_path: str=None, image_root: str=None, is_kpt: bool=False,
         # train params
-        batch_size: int=1, epoch: int=1, autoaug: bool=False,
+        batch_size: int=1, epoch: int=1, autoaug: bool=False, learning_rate: float=None, snapshot_epoch: int=100,
         # validation coco dataset
         coco_json_path_valid: str=None, image_root_valid: str=None,
         # validation params
@@ -55,19 +55,20 @@ class Detector(Trainer):
         # detection parameter
         nms_threshold: float=None, score_threshold: float=None, n_bboxes: int=None, class_name: str="PicoHead",
         # other parameters
-        use_gpu: bool=False, random_seed: int=0, is_override: bool=False, worker_num: int=1,
-        outdir: str=f"./output{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
+        use_gpu: bool=False, random_seed: int=0, is_override: bool=False, worker_num: int=1, outdir: str=None,
         **kwargs
     ):
         logger.info("START")
-        assert isinstance(outdir, str)
+        assert outdir is None or isinstance(outdir, str)
         assert isinstance(random_seed, int) and random_seed >= 0
         assert isinstance(num_classes, int) and num_classes > 0
         assert num_joints is None or (isinstance(num_joints, int) and num_joints > 0)
         assert isinstance(worker_num, int) and worker_num >= 0
-        outdir = correct_dirpath(outdir)
         # download base config files
-        basefile = download_config_files(config_url_path, basedir=base_configs_dir, is_override=is_override)[0]
+        if os.path.exists(config_url_path):
+            basefile = config_url_path
+        else:
+            basefile = download_config_files(config_url_path, basedir=base_configs_dir, is_override=is_override)[0]
         cfgbase  = load_config(basefile)
         # add config setting
         yaml_add = CreatePPDetYaml()
@@ -81,12 +82,22 @@ class Detector(Trainer):
             yaml_add.set_keypoint_paramter(num_joints, cfgbase["pixel_std"], cfgbase["train_height"], cfgbase["train_width"], cfgbase["hmsize"])
         if isinstance(coco_json_path, str):
             assert isinstance(image_root, str)
+            assert learning_rate is not None
             mode = "train"
             yaml_add.set_train_dataset(image_root, coco_json_path, is_kpt=is_kpt)
             yaml_add.set_train_reader(batch_size, autoaug=autoaug, is_kpt=is_kpt)
             yaml_add.set_epoch(epoch)
+            yaml_add.set_learning_rate(learning_rate)
+            yaml_add.set_snapshot_epoch(snapshot_epoch)
         else:
             yaml_add.set_test_reader(batch_size, worker_num)
+        # output directory
+        if outdir is None:
+            if   mode == "train":
+                outdir=f"./output{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            elif mode == "test":
+                outdir = "./output_test/"
+        outdir = correct_dirpath(outdir)
         # set validation params
         self.is_validate = False
         if isinstance(coco_json_path_valid, str):
@@ -99,11 +110,10 @@ class Detector(Trainer):
             yaml_add.set_head_parameer(nms_threshold=nms_threshold, score_threshold=score_threshold, n_bboxes=n_bboxes, class_name=class_name)
         # other parameters
         yaml_add.set_num_classes(num_classes)
-        if isinstance(outdir, str): yaml_add.set_save_dir(outdir)
+        yaml_add.set_save_dir(outdir)
         yaml_add.set_weights(weights)
         yaml_add.set_pretrain_weights(weights)
         yaml_add.set_use_gpu(use_gpu)
-        yaml_add.set_snapshot_epoch(100)
         paddle.distributed.init_parallel_env()
         set_random_seed(random_seed)
         # kwargs set
@@ -111,11 +121,7 @@ class Detector(Trainer):
             try: getattr(yaml_add, f"set_{x}")(y)
             except AttributeError: pass
         # create config file
-        if   mode == "train":
-            os.makedirs(outdir, exist_ok=True)
-        elif mode == "test":
-            outdir = "./output_test/"
-            os.makedirs(outdir, exist_ok=True)
+        os.makedirs(outdir, exist_ok=True)
         filename = outdir + "myyaml.yml"
         yaml_add.save(filename)
         cfg = load_config(filename)
@@ -134,6 +140,8 @@ class Detector(Trainer):
     def predict(self, data: Union[dict, str]):
         logger.info("START")
         self.model.eval()
+        # self.model.train()
+        # self.model.training = False
         if isinstance(data, str):
             dataset = ImageDataset()
             dataset.set_data([data, ])
@@ -141,44 +149,50 @@ class Detector(Trainer):
             for x in dataloader:
                 data = x
                 break
-        if self.cfg.get("pixel_std") is not None:
-            data["im_id"] = data["im_id"][0]
-            center, scale = self.box2cs(data["im_shape"].numpy())
-            data["center"] = paddle.to_tensor(center)
-            data["scale"]  = paddle.to_tensor(scale)
         outs = self.model(data)
-        for key in ['im_shape', 'scale_factor', 'im_id']:
-            outs[key] = data[key]
+        for key in ['im_shape', 'scale_factor', 'im_id', 'crop_bbox']:
+            if key in data:
+                outs[key] = data[key]
         for key, value in outs.items():
             if hasattr(value, 'numpy'):
                 outs[key] = value.numpy()
         logger.info("END")
         return outs
     
-    def predict_dataset(self, dataset, batch_size: int=1, is_only_bboxes: bool=False):
+    def predict_dataset(self, dataset, batch_size: int=1, is_only_bboxes: bool=False, is_only_keypoint: bool=False):
         logger.info("START")
         assert isinstance(batch_size, int) and batch_size >= 1
         self.model.eval()
-        inputs, outputs = {"im_id": [], "image": [], "im_shape": [], "scale_factor": []}, []
+        inputs, outputs = {"im_id": [], "image": [], "im_shape": [], "scale_factor": [], "crop_bbox": []}, []
         for i_data in range(len(dataset)):
             data = dataset[i_data]
             for x in inputs.keys():
-                inputs[x].append(data[x].reshape(1, *data[x].shape))
+                if x in data:
+                    inputs[x].append(data[x])
             if (len(inputs["im_id"]) >= batch_size) or (i_data + 1 == len(dataset)):
-                inputs   = {x: np.concatenate(y, axis=0) for x, y in inputs.items()}
+                inputs   = {x: np.stack(y) for x, y in inputs.items() if len(y) > 0}
                 inputs   = {x: paddle.to_tensor(y) for x, y in inputs.items()}
                 output   = self.predict(inputs)
                 outputs += [output, ]
-                inputs = {"im_id": [], "image": [], "im_shape": [], "scale_factor": []}
+                inputs = {"im_id": [], "image": [], "im_shape": [], "scale_factor": [], "crop_bbox": []}
         if is_only_bboxes:
             bboxes = []
             for i in range(len(outputs)):
                 bboxes += np.array_split(outputs[i]["bbox"], outputs[i]["bbox_num"].cumsum()[:-1])
             outputs = bboxes
+        if is_only_keypoint:
+            kpts = []
+            for i in range(len(outputs)):
+                output = outputs[i]["keypoint"]
+                for ndf in output:
+                    ndfwk = ndf[0][:, :, :2] + outputs[i]["crop_bbox"][:, :2].reshape(-1, 1, 2)
+                    ndfwk = np.concatenate([ndfwk, ndf[0][:, :, 2:]], axis=-1)
+                    kpts += [ndfwk.copy(), ]
+            outputs = kpts
         logger.info("END")
         return outputs
 
-    def predict_dataloader(self, dataloader, is_only_bboxes: bool=False):
+    def predict_dataloader(self, dataloader, is_only_bboxes: bool=False, is_only_keypoint: bool=False):
         logger.info("START")
         self.model.eval()
         outputs = []
@@ -192,6 +206,15 @@ class Detector(Trainer):
             for i in range(len(outputs)):
                 bboxes += np.array_split(outputs[i]["bbox"], outputs[i]["bbox_num"].cumsum()[:-1])
             outputs = bboxes
+        if is_only_keypoint:
+            kpts = []
+            for i in range(len(outputs)):
+                output = outputs[i]["keypoint"]
+                for ndf in output:
+                    ndfwk = ndf[0][:, :, :2] + outputs[i]["crop_bbox"][:, :2].reshape(-1, 1, 2)
+                    ndfwk = np.concatenate([ndfwk, ndf[0][:, :, 2:]], axis=-1)
+                    kpts += [ndfwk.copy(), ]
+            outputs = kpts
         logger.info("END")
         return outputs
 
@@ -226,27 +249,3 @@ class Detector(Trainer):
         logger.info("START")
         super().train(validate=self.is_validate)
         logger.info("END")
-
-    def box2cs(self, im_shape: np.ndarray):
-        """
-        Use for keypoint
-        refer: https://github.com/PaddlePaddle/PaddleDetection/blob/b615336fe3a9ff740fdb1b889be7bc865b6d20fa/ppdet/data/source/keypoint_coco.py#L517
-        Params::
-            im_shape:
-                h, w
-            trainsize:
-                train_width, train_height
-        """
-        assert isinstance(im_shape, np.ndarray)
-        im_shape     = im_shape.copy().astype(np.float32) - 1
-        trainsize    = self.cfg["trainsize"]
-        pixel_std    = self.cfg["pixel_std"]
-        center       = (im_shape / 2)[:, ::-1]
-        h, w         = im_shape[:, 0], im_shape[:, 1]
-        aspect_ratio = trainsize[0] * 1.0 / trainsize[1]
-        boolwk       = (w > (aspect_ratio * h))
-        im_shape[ boolwk, 0] = w[ boolwk] / aspect_ratio
-        im_shape[~boolwk, 1] = h[~boolwk] * aspect_ratio
-        scale = np.stack([im_shape[:, 1] / pixel_std, im_shape[:, 0] / pixel_std]).astype(np.float32).T
-        scale = scale * 1.25
-        return center, scale

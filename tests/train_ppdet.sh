@@ -2,9 +2,9 @@
 set -eu
 
 # training
-python train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
-    --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco.pdparams \
-    --coco_json_path ./img/coco.json --image_root ./img/ --batch_size 1 --epoch 10 --num_classes 2
+python train_ppdet.py --config_url_path picodet/picodet_s_320_coco_lcnet.yml \
+    --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco_lcnet.pdparams \
+    --coco_json_path ./img/coco.json --image_root ./img/ --batch_size 1 --epoch 500 --num_classes 2 --learning_rate 0.01
 # training + validation
 python train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
     --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco.pdparams \
@@ -15,8 +15,8 @@ python train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
     --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco.pdparams \
     --coco_json_path ./img/coco.json --image_root ./img/ --batch_size 1 --epoch 10 ---use_gpu ---fp16
 # inference image
-python train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
-    --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco.pdparams \
+python train_ppdet.py --config_url_path picodet/picodet_s_320_coco_lcnet.yml \
+    --weights https://paddledet.bj.bcebos.com/models/picodet_s_320_coco_lcnet.pdparams \
     --img ./img/img_dog_cat.jpg --num_classes 80
 # inference video
 python train_ppdet.py --config_url_path picodet/picodet_s_320_coco.yml \
