@@ -248,7 +248,7 @@ class Detector(DefaultTrainer):
     def set_predictor(self):
         self.predictor = Predictor(self.cfg)
 
-    def predict(self, img: Union[str, np.ndarray, List[str], List[np.ndarray]], batch_size: int=1):
+    def predict(self, img: Union[str, np.ndarray, List[str], List[np.ndarray]], batch_size: int=1, proc_aug=lambda x: x):
         logger.info(f"predict batch size={batch_size}", color=["BOLD", "CYAN"])
         assert isinstance(batch_size, int) and batch_size > 0
         if self.predictor is None: self.set_predictor()
@@ -259,17 +259,17 @@ class Detector(DefaultTrainer):
         for i in range(len(img) // batch_size):
             logger.info(f"predict i batch: {i}")
             batch   = img[i*batch_size : (i+1)*batch_size]
-            output  = self.predictor.multi_predict(batch)
+            output  = self.predictor.multi_predict(batch, proc_aug=proc_aug)
             output  = [x["instances"].to("cpu") for x in output]
             outputs = outputs + output
         return outputs, [self.classes[x.get("pred_classes").numpy()] for x in outputs]
 
-    def draw_annotation(self, img: Union[str, np.ndarray], output: dict=None, only_best: bool=False, resize: int=None, show: bool=False):
+    def draw_annotation(self, img: Union[str, np.ndarray], output: dict=None, only_best: bool=False, resize: int=None, show: bool=False, **kwargs):
         import detectron2.utils.visualizer
         detectron2.utils.visualizer._KEYPOINT_THRESHOLD = 0
         if isinstance(img, str): img = cv2.imread(img)
         if output is None:
-            output, _ = self.predict(img)
+            output, _ = self.predict(img, **kwargs)
             output    = output[0]
         if only_best: output = output[0:1]
         v = Visualizer(
@@ -289,42 +289,45 @@ class Detector(DefaultTrainer):
     
     def to_coco(
         self, img: Union[str, np.ndarray, List[str], List[np.ndarray]], batch_size: int=1, 
-        supercategory: dict=None, save_filepath: str=None
+        supercategory: dict=None, save_filepath: str=None, **kwargs
     ) -> CocoManager:
         logger.info(f"to coco format.", color=["BOLD", "CYAN"])
         assert check_type(img, [str, np.ndarray]) or check_type_list(img, [str, np.ndarray])
-        img        = img if isinstance(img, list) else [img]
-        bool_path  = check_type_list(img, str)
-        coco       = CocoManager()
-        metadata   = MetadataCatalog.get(self.dataset_name)
-        outputs, _ = self.predict(img, batch_size=batch_size)
-        for i_img, output in enumerate(outputs):
-            imgpath = img[i_img] if bool_path else ""
-            height, width = output.image_size
-            segmentations, keypoints = None, None
-            try: segmentations = output.get("pred_masks").numpy()
-            except KeyError: pass
-            try: keypoints     = output.get("pred_keypoints").numpy()
-            except KeyError: pass
-            for i_anno, bbox in enumerate(output.get("pred_boxes").tensor.numpy()):
-                x1, y1, x2, y2 = [float(x) for x in bbox]
-                class_id = output.get("pred_classes")[i_anno]
-                segmentation, keypoint = None, None
-                if segmentations is not None:
-                    segmentation = segmentations[i_anno].copy()
-                    contours     = cv2.findContours(segmentation.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)[0]
-                    segmentation = [contour.reshape(-1).tolist() for contour in contours]
-                    segmentation = [x for x in segmentation if len(x) > 10]
-                    segmentation = [[int(x) for x in y] for y in segmentation]
-                if keypoints is not None:
-                    keypoint = keypoints[i_anno].copy()
-                    keypoint[:, 2] = 1
-                    keypoint = keypoint.reshape(-1).tolist()
-                coco.add(
-                    imgpath, height, width, (x1, y1, x2 - x1, y2 - y1),
-                    metadata.thing_classes[class_id], segmentations=segmentation,
-                    keypoints=keypoint, category_name_kpts=metadata.get("keypoint_names")
-                )
+        img       = img if isinstance(img, list) else [img]
+        bool_path = check_type_list(img, str)
+        coco      = CocoManager()
+        metadata  = MetadataCatalog.get(self.dataset_name)
+        outputs   = []
+        for img_batch in np.array_split(img, (len(img)//batch_size)+1):
+            outputs_batch, _ = self.predict(img_batch.tolist(), batch_size=batch_size, **kwargs)
+            for i_img, output in enumerate(outputs_batch):
+                imgpath = img_batch[i_img] if bool_path else ""
+                height, width = output.image_size
+                segmentations, keypoints = None, None
+                try: segmentations = output.get("pred_masks").numpy()
+                except KeyError: pass
+                try: keypoints     = output.get("pred_keypoints").numpy()
+                except KeyError: pass
+                for i_anno, bbox in enumerate(output.get("pred_boxes").tensor.numpy()):
+                    x1, y1, x2, y2 = [float(x) for x in bbox]
+                    class_id = output.get("pred_classes")[i_anno]
+                    segmentation, keypoint = None, None
+                    if segmentations is not None:
+                        segmentation = segmentations[i_anno].copy()
+                        contours     = cv2.findContours(segmentation.astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)[0]
+                        segmentation = [contour.reshape(-1).tolist() for contour in contours]
+                        segmentation = [x for x in segmentation if len(x) > 10]
+                        segmentation = [[int(x) for x in y] for y in segmentation]
+                    if keypoints is not None:
+                        keypoint = keypoints[i_anno].copy()
+                        keypoint[:, 2] = 1
+                        keypoint = keypoint.reshape(-1).tolist()
+                    coco.add(
+                        imgpath, height, width, (x1, y1, x2 - x1, y2 - y1),
+                        metadata.thing_classes[class_id], segmentations=segmentation,
+                        keypoints=keypoint, category_name_kpts=metadata.get("keypoint_names")
+                    )
+            outputs += outputs_batch
         coco.concat_added()
         coco.df_json["annotations_score"] = np.concatenate([x.get("scores").numpy() for x in outputs])
         if keypoints is not None:
@@ -427,7 +430,7 @@ class Validator(HookBase):
 
 
 class Predictor(DefaultPredictor):
-    def multi_predict(self, list_images: List[np.ndarray]):
+    def multi_predict(self, list_images: List[np.ndarray], proc_aug=lambda x: x):
         inputs = []
         with torch.no_grad():
             for original_image in list_images:
@@ -436,6 +439,7 @@ class Predictor(DefaultPredictor):
                     original_image = original_image[:, :, ::-1]
                 height, width = original_image.shape[:2]
                 image = self.aug.get_transform(original_image).apply_image(original_image)
+                image = proc_aug(image)
                 image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
                 inputs.append({"image": image, "height": height, "width": width})
             predictions = self.model(inputs)
