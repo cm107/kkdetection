@@ -90,7 +90,7 @@ def register_catalogs(
             classes = np.sort(coco.df_json["categories_name"].unique()).tolist()
         if keypoint_names is None and isinstance(coco_json_path, str):
             keypoint_names = coco.df_json["categories_keypoints"].iloc[0]
-            if len(keypoint_names) == 0: keypoint_names = None
+            if np.isnan(keypoint_names) or len(keypoint_names) == 0: keypoint_names = None
         register_coco_instances(dataset_name, {}, coco_json_path, image_path)
     if dataset_name == DEFAULT_DATASET_NAME: assert classes is not None
     if classes is not None:
