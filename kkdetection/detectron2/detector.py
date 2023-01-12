@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 from typing import List, Tuple, Union
 import torch
+from tqdm import tqdm
 
 
 # detectron2 packages
@@ -298,7 +299,7 @@ class Detector(DefaultTrainer):
         coco      = CocoManager()
         metadata  = MetadataCatalog.get(self.dataset_name)
         outputs   = []
-        for img_batch in np.array_split(img, (len(img)//batch_size)+1):
+        for img_batch in tqdm(np.array_split(img, (len(img)//batch_size)+1)):
             outputs_batch, _ = self.predict(img_batch.tolist(), batch_size=batch_size, **kwargs)
             for i_img, output in enumerate(outputs_batch):
                 imgpath = img_batch[i_img] if bool_path else ""
