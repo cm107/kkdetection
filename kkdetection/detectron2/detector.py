@@ -1,7 +1,7 @@
 import os, time, datetime
 import numpy as np
 import cv2
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Callable
 import torch
 from tqdm import tqdm
 
@@ -249,7 +249,10 @@ class Detector(DefaultTrainer):
     def set_predictor(self):
         self.predictor = Predictor(self.cfg)
 
-    def predict(self, img: Union[str, np.ndarray, List[str], List[np.ndarray]], batch_size: int=1, proc_aug=lambda x: x):
+    def predict(
+        self, img: Union[str, np.ndarray, List[str], List[np.ndarray]], batch_size: int=1,
+        preproc: Callable[[np.ndarray], np.ndarray]=None, proc_aug=lambda x: x
+    ):
         logger.info(f"predict batch size={batch_size}", color=["BOLD", "CYAN"])
         assert isinstance(batch_size, int) and batch_size > 0
         if self.predictor is None: self.set_predictor()
@@ -260,7 +263,7 @@ class Detector(DefaultTrainer):
         for i in range(len(img) // batch_size):
             logger.info(f"predict i batch: {i}")
             batch   = img[i*batch_size : (i+1)*batch_size]
-            output  = self.predictor.multi_predict(batch, proc_aug=proc_aug)
+            output  = self.predictor.multi_predict(batch, preproc=preproc, proc_aug=proc_aug)
             output  = [x["instances"].to("cpu") for x in output]
             outputs = outputs + output
         return outputs, [self.classes[x.get("pred_classes").numpy()] for x in outputs]
@@ -290,7 +293,8 @@ class Detector(DefaultTrainer):
     
     def to_coco(
         self, img: Union[str, np.ndarray, List[str], List[np.ndarray]], batch_size: int=1, 
-        supercategory: dict=None, save_filepath: str=None, **kwargs
+        supercategory: dict=None, save_filepath: str=None,
+        preproc: Callable[[np.ndarray], np.ndarray]=None, **kwargs
     ) -> CocoManager:
         logger.info(f"to coco format.", color=["BOLD", "CYAN"])
         assert check_type(img, [str, np.ndarray]) or check_type_list(img, [str, np.ndarray])
@@ -300,7 +304,7 @@ class Detector(DefaultTrainer):
         metadata  = MetadataCatalog.get(self.dataset_name)
         outputs   = []
         for img_batch in tqdm(np.array_split(img, (len(img)//batch_size)+1)):
-            outputs_batch, _ = self.predict(img_batch.tolist(), batch_size=batch_size, **kwargs)
+            outputs_batch, _ = self.predict(img_batch.tolist(), batch_size=batch_size, preproc=preproc, **kwargs)
             for i_img, output in enumerate(outputs_batch):
                 imgpath = img_batch[i_img] if bool_path else ""
                 height, width = output.image_size
@@ -431,13 +435,20 @@ class Validator(HookBase):
 
 
 class Predictor(DefaultPredictor):
-    def multi_predict(self, list_images: List[np.ndarray], proc_aug=lambda x: x):
+    def multi_predict(
+        self, list_images: List[np.ndarray], proc_aug=lambda x: x,
+        preproc: Callable[[np.ndarray], np.ndarray]=None
+    ):
         inputs = []
         with torch.no_grad():
             for original_image in list_images:
+                if type(original_image) is list:
+                    original_image = np.array(original_image, dtype=np.uint8)
                 if self.input_format == "RGB":
                     # whether the model expects BGR inputs or RGB
                     original_image = original_image[:, :, ::-1]
+                if preproc is not None:
+                    original_image = preproc(original_image)
                 height, width = original_image.shape[:2]
                 image = self.aug.get_transform(original_image).apply_image(original_image)
                 image = proc_aug(image)
